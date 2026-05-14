@@ -21,5 +21,9 @@ let package = Package(
             name: "NotaCoreTests",
             dependencies: ["NotaCore"]
         ),
+        .testTarget(
+            name: "NotaAppTests",
+            dependencies: ["NotaApp", "NotaCore"]
+        ),
     ]
 )
