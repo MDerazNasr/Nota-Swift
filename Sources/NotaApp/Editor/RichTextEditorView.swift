@@ -8,6 +8,17 @@ struct RichTextEditorView: NSViewRepresentable {
         @Published var cursorRect: CGRect?
 
         @MainActor
+        func setCursorRect(_ nextRect: CGRect?) {
+            guard cursorRect != nextRect else {
+                return
+            }
+
+            DispatchQueue.main.async { [weak self] in
+                self?.cursorRect = nextRect
+            }
+        }
+
+        @MainActor
         func replace(range: NSRange, with text: String) {
             guard let textView else {
                 return
@@ -44,7 +55,13 @@ struct RichTextEditorView: NSViewRepresentable {
                 return
             }
 
-            textView.window?.makeFirstResponder(textView)
+            DispatchQueue.main.async { [weak textView] in
+                guard let textView else {
+                    return
+                }
+
+                textView.window?.makeFirstResponder(textView)
+            }
         }
     }
 
@@ -95,7 +112,7 @@ struct RichTextEditorView: NSViewRepresentable {
         textView.onExitEditor = onExitEditor
         textView.onEditorEvent = onEditorEvent
         textView.onCursorRectChange = { nextRect in
-            context.coordinator.parent.bridge.cursorRect = nextRect
+            context.coordinator.parent.bridge.setCursorRect(nextRect)
         }
         bridge.textView = textView
         scrollView.documentView = textView
@@ -129,15 +146,20 @@ struct RichTextEditorView: NSViewRepresentable {
         textView.editorMode = mode
 
         if editable && coordinator.wasEditable == false {
-            mode = .insert
-            textView.editorMode = .insert
             textView.setSelectedRange(NSRange(location: textView.string.count, length: 0))
-            textView.window?.makeFirstResponder(textView)
-            onFocus()
+            DispatchQueue.main.async {
+                guard textView.isEditable else {
+                    return
+                }
+
+                textView.window?.makeFirstResponder(textView)
+            }
         }
 
         coordinator.wasEditable = editable
-        textView.updateCursorRect()
+        DispatchQueue.main.async {
+            textView.updateCursorRect()
+        }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {

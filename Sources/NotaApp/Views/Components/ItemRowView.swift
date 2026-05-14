@@ -183,6 +183,16 @@ struct ItemRowView: View {
         .onTapGesture {
             focusItem(editing: true)
         }
+        .onAppear {
+            guard editable else {
+                return
+            }
+
+            editorMode = .insert
+            DispatchQueue.main.async {
+                editorBridge.focus()
+            }
+        }
         .onDrag {
             let draggedIds = model.notesStore.selectedItemIds.contains(item.id) ? model.notesStore.selectedItemIds : [item.id]
             model.notesStore.setSelectedItemIds(draggedIds)
