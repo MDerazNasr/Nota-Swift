@@ -18,7 +18,7 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         window.backgroundColor = .clear
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = false
+        window.isMovableByWindowBackground = true
         window.styleMask.insert(.fullSizeContentView)
         window.standardWindowButton(.closeButton)?.isHidden = true
         window.standardWindowButton(.miniaturizeButton)?.isHidden = true

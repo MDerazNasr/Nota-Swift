@@ -52,7 +52,6 @@ struct TitleBarView: View {
                 .fill(theme.border)
                 .frame(height: 1)
         }
-        .background(WindowDragArea())
     }
 
     private var tagSortActive: Bool {
