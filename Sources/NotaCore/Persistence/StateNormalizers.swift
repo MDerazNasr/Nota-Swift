@@ -81,6 +81,7 @@ public enum NotesNormalizer {
 public enum SettingsNormalizer {
     public static func normalize(settings: Settings) -> Settings {
         var settings = settings
+        settings.theme = ThemeCatalog.contains(settings.theme) ? settings.theme : ThemeCatalog.defaultThemeKey
         settings.font = FontOption(rawValue: settings.font.rawValue) ?? .jetBrainsMono
         settings.fontSize = min(max(settings.fontSize, 10), 20)
         settings.borderRadius = min(max(settings.borderRadius, 0), 12)

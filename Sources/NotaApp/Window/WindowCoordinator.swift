@@ -84,4 +84,12 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
         settingsStore.setWindowSize(WindowSize(width: size.width, height: size.height))
         settingsStore.setWindowPosition(WindowPosition(x: origin.x, y: origin.y))
     }
+
+    func hideWindow() {
+        window?.orderOut(nil)
+    }
+
+    func minimizeWindow() {
+        window?.miniaturize(nil)
+    }
 }
