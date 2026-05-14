@@ -24,5 +24,6 @@ struct RootView: View {
         .frame(minWidth: WindowGeometry.minWidth, minHeight: WindowGeometry.minHeight)
         .background(theme.background)
         .font(.custom(model.settingsStore.settings.font.rawValue, size: CGFloat(model.settingsStore.settings.fontSize)))
+        .modifier(AppKeyMonitor())
     }
 }
