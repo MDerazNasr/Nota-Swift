@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import NotaCore
 import Observation
@@ -15,6 +16,8 @@ final class NotaApplicationModel {
     let settingsStore: SettingsStore
     let notesStore: NotesStore
     let windowCoordinator: WindowCoordinator
+    let globalHotKeyManager: GlobalHotKeyManager
+    let menuBarController: MenuBarController
     var settingsOpen: Bool
     var settingsTab: SettingsTab
 
@@ -29,6 +32,8 @@ final class NotaApplicationModel {
         self.settingsStore = settingsStore
         self.notesStore = notesStore
         self.windowCoordinator = WindowCoordinator()
+        self.globalHotKeyManager = GlobalHotKeyManager()
+        self.menuBarController = MenuBarController()
         self.settingsOpen = false
         self.settingsTab = .appearance
     }
@@ -37,6 +42,8 @@ final class NotaApplicationModel {
         async let settings: Void = settingsStore.hydrate()
         async let notes: Void = notesStore.hydrate()
         _ = await (settings, notes)
+        applyBehaviorSettings()
+        updateGlobalShortcut()
     }
 
     func openSettings() {
@@ -50,5 +57,47 @@ final class NotaApplicationModel {
 
     func toggleSettings() {
         settingsOpen ? closeSettings() : openSettings()
+    }
+
+    func updateGlobalShortcut() {
+        globalHotKeyManager.register(shortcut: settingsStore.settings.shortcuts.toggleWindow) { [weak self] in
+            self?.toggleWindow()
+        }
+    }
+
+    func toggleWindow() {
+        windowCoordinator.toggleWindow()
+    }
+
+    func setOpenOnStartup(_ enabled: Bool) {
+        settingsStore.setOpenOnStartup(enabled)
+        LaunchAtLoginManager.setEnabled(enabled)
+    }
+
+    func setShowInDock(_ enabled: Bool) {
+        settingsStore.setShowInDock(enabled)
+        applyActivationPolicy(showInDock: enabled)
+    }
+
+    func setShowInMenuBar(_ enabled: Bool) {
+        settingsStore.setShowInMenuBar(enabled)
+        menuBarController.setVisible(enabled) { [weak self] in
+            self?.toggleWindow()
+        }
+    }
+
+    func updateShortcut(_ mutation: (inout ShortcutMap) -> Void) {
+        settingsStore.updateShortcuts(mutation)
+        updateGlobalShortcut()
+    }
+
+    private func applyBehaviorSettings() {
+        applyActivationPolicy(showInDock: settingsStore.settings.showInDock)
+        setShowInMenuBar(settingsStore.settings.showInMenuBar)
+        LaunchAtLoginManager.setEnabled(settingsStore.settings.openOnStartup)
+    }
+
+    private func applyActivationPolicy(showInDock: Bool) {
+        NSApp.setActivationPolicy(showInDock ? .regular : .accessory)
     }
 }

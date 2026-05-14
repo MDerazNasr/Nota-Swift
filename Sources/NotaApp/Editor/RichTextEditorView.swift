@@ -8,6 +8,37 @@ struct RichTextEditorView: NSViewRepresentable {
         @Published var cursorRect: CGRect?
 
         @MainActor
+        func replace(range: NSRange, with text: String) {
+            guard let textView else {
+                return
+            }
+
+            textView.textStorage?.replaceCharacters(in: range, with: text)
+            textView.didChangeText()
+        }
+
+        @MainActor
+        func insertLink(label: String, url: String) {
+            guard let textView else {
+                return
+            }
+
+            let insertion = NSMutableAttributedString(string: label)
+            insertion.addAttribute(
+                .link,
+                value: URL(string: LinkUtilities.normalizeHref(url))!,
+                range: NSRange(location: 0, length: insertion.length)
+            )
+            insertion.addAttribute(
+                .foregroundColor,
+                value: NSColor.systemBlue,
+                range: NSRange(location: 0, length: insertion.length)
+            )
+            textView.textStorage?.insert(insertion, at: textView.selectedRange.location)
+            textView.didChangeText()
+        }
+
+        @MainActor
         func focus() {
             guard let textView else {
                 return
@@ -27,6 +58,12 @@ struct RichTextEditorView: NSViewRepresentable {
     let onFocus: () -> Void
     let onExitEditor: () -> Void
     let onCheckItem: () -> Void
+    let onSlashStateChange: (SlashState?) -> Void
+
+    struct SlashState: Equatable {
+        var query: String
+        var range: NSRange
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -123,10 +160,29 @@ struct RichTextEditorView: NSViewRepresentable {
             let richText = AttributedStringCodec.makeRichText(from: textView.attributedString())
             lastRichText = richText
             parent.onChange(richText)
+            parent.onSlashStateChange(readSlashState(textView))
         }
 
         func textViewDidChangeSelection(_ notification: Notification) {
             textView?.updateCursorRect()
+        }
+
+        @MainActor
+        private func readSlashState(_ textView: NotaTextView) -> SlashState? {
+            let cursor = textView.selectedRange.location
+            let prefix = String(textView.string.prefix(cursor))
+            guard let match = prefix.range(of: #"(?:^|\s)\/([^/]*)$"#, options: .regularExpression) else {
+                return nil
+            }
+
+            let query = String(prefix[match]).trimmingCharacters(in: .whitespacesAndNewlines).dropFirst()
+            return SlashState(
+                query: String(query),
+                range: NSRange(
+                    location: prefix.distance(from: prefix.startIndex, to: match.lowerBound),
+                    length: prefix.distance(from: match.lowerBound, to: prefix.endIndex)
+                )
+            )
         }
     }
 }

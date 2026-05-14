@@ -92,4 +92,26 @@ final class WindowCoordinator: NSObject, NSWindowDelegate {
     func minimizeWindow() {
         window?.miniaturize(nil)
     }
+
+    func showWindow() {
+        guard let window, let settingsStore else {
+            return
+        }
+
+        applySavedGeometry(from: settingsStore.settings)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func toggleWindow() {
+        guard let window else {
+            return
+        }
+
+        if window.isVisible {
+            window.orderOut(nil)
+        } else {
+            showWindow()
+        }
+    }
 }

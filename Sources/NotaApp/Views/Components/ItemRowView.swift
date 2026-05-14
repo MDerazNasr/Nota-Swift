@@ -6,6 +6,8 @@ struct ItemRowView: View {
     @Environment(NotaApplicationModel.self) private var model
     @StateObject private var editorBridge = RichTextEditorView.Bridge()
     @State private var editorMode: ItemEditorMode = .insert
+    @State private var slashState: RichTextEditorView.SlashState?
+    @State private var showLinkPopup = false
 
     let item: Item
     let tabId: String
@@ -53,6 +55,9 @@ struct ItemRowView: View {
                         },
                         onCheckItem: {
                             model.notesStore.checkItem(tabId: tabId, itemId: item.id)
+                        },
+                        onSlashStateChange: { nextState in
+                            slashState = nextState
                         }
                     )
                     .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
@@ -77,15 +82,24 @@ struct ItemRowView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(item.tags) { tag in
-                            Text(tag.name)
-                                .font(.system(size: 10, weight: .regular, design: .monospaced))
-                                .foregroundStyle(Color(css: tag.color))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .overlay(
-                                    Capsule()
-                                        .stroke(Color(css: tag.color), lineWidth: 1)
-                                )
+                            HStack(spacing: 3) {
+                                Text(tag.name)
+                                Button {
+                                    model.notesStore.removeItemTag(tabId: tabId, itemId: item.id, tagName: tag.name)
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 8, weight: .bold))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundStyle(Color(css: tag.color))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color(css: tag.color), lineWidth: 1)
+                            )
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -114,6 +128,46 @@ struct ItemRowView: View {
                 Rectangle()
                     .fill(theme.accent)
                     .frame(height: 1)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if let slashState {
+                let items = SlashCommandUtilities.buildItems(
+                    query: slashState.query,
+                    availableTags: TagUtilities.collectActiveTags(from: model.notesStore.tabs),
+                    itemTags: item.tags
+                )
+
+                if items.isEmpty == false {
+                    SlashMenuView(items: items, theme: theme) { selectedItem in
+                        editorBridge.replace(range: slashState.range, with: "")
+                        self.slashState = nil
+
+                        switch selectedItem {
+                        case .command:
+                            showLinkPopup = true
+                        case let .tag(_, tag, _, _):
+                            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: tag.name)
+                        case let .createTag(_, name, _, _):
+                            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: name)
+                        }
+                    }
+                    .offset(x: 28, y: 40)
+                }
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if showLinkPopup {
+                LinkPopupView(theme: theme) { label, url in
+                    editorBridge.insertLink(label: label, url: url)
+                    showLinkPopup = false
+                    editorMode = .normal
+                    editorBridge.focus()
+                } onCancel: {
+                    showLinkPopup = false
+                    editorBridge.focus()
+                }
+                .offset(x: 28, y: 40)
             }
         }
         .opacity(item.state == .done ? theme.doneOpacity : 1)
