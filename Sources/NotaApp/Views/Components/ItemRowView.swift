@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 
 struct ItemRowView: View {
     @Environment(NotaApplicationModel.self) private var model
+    @StateObject private var editorBridge = RichTextEditorView.Bridge()
+    @State private var editorMode: ItemEditorMode = .insert
 
     let item: Item
     let tabId: String
@@ -32,13 +34,43 @@ struct ItemRowView: View {
                 .buttonStyle(.plain)
                 .frame(width: 24, alignment: .leading)
 
-                Text(item.richText.text.isEmpty ? " " : item.richText.text)
-                    .font(.system(size: 13, weight: .regular, design: .monospaced))
-                    .foregroundStyle(theme.textPrimary)
-                    .lineSpacing(4)
-                    .strikethrough(item.state == .done, color: theme.textSecondary)
+                ZStack(alignment: .topLeading) {
+                    RichTextEditorView(
+                        bridge: editorBridge,
+                        richText: item.richText,
+                        editable: editable,
+                        fontName: model.settingsStore.settings.font.rawValue,
+                        fontSize: CGFloat(model.settingsStore.settings.fontSize),
+                        mode: $editorMode,
+                        onChange: { nextRichText in
+                            model.notesStore.updateItemRichText(tabId: tabId, itemId: item.id, richText: nextRichText)
+                        },
+                        onFocus: {
+                            focusItem(editing: true)
+                        },
+                        onExitEditor: {
+                            model.notesStore.setMode(.nav)
+                        },
+                        onCheckItem: {
+                            model.notesStore.checkItem(tabId: tabId, itemId: item.id)
+                        }
+                    )
                     .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
-                    .textSelection(.enabled)
+
+                    if editable,
+                       editorMode != .insert,
+                       let cursorRect = editorBridge.cursorRect {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(.white)
+                            .frame(
+                                width: editorMode == .visual || editorMode == .visualLine ? 2 : 9,
+                                height: max(16, cursorRect.height)
+                            )
+                            .blendMode(.difference)
+                            .offset(x: max(cursorRect.minX - 3, 0), y: cursorRect.minY)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
 
             if item.tags.isEmpty == false {
@@ -87,7 +119,7 @@ struct ItemRowView: View {
         .opacity(item.state == .done ? theme.doneOpacity : 1)
         .contentShape(Rectangle())
         .onTapGesture {
-            focusItem()
+            focusItem(editing: true)
         }
         .onDrag {
             let draggedIds = model.notesStore.selectedItemIds.contains(item.id) ? model.notesStore.selectedItemIds : [item.id]
@@ -95,10 +127,24 @@ struct ItemRowView: View {
             model.notesStore.startItemDrag(draggedIds)
             return NSItemProvider(object: NSString(string: item.id))
         }
+        .onChange(of: editable) { _, nextEditable in
+            guard nextEditable else {
+                return
+            }
+
+            editorMode = .insert
+            DispatchQueue.main.async {
+                editorBridge.focus()
+            }
+        }
         .onDrop(
             of: [UTType.text],
             delegate: ItemRowDropDelegate(model: model, tabId: tabId, itemId: item.id)
         )
+    }
+
+    private var editable: Bool {
+        focused && model.notesStore.mode == .edit
     }
 
     private var rowBackground: Color {
@@ -111,14 +157,14 @@ struct ItemRowView: View {
         return .clear
     }
 
-    private func focusItem() {
+    private func focusItem(editing: Bool) {
         guard let activeTab = model.notesStore.activeTab,
               let index = activeTab.items.firstIndex(where: { $0.id == item.id }) else {
             return
         }
 
         model.notesStore.setCursorIndex(index)
-        model.notesStore.setMode(.nav)
+        model.notesStore.setMode(editing ? .edit : .nav)
     }
 }
 

@@ -2,6 +2,75 @@ import Foundation
 
 @MainActor
 public extension NotesStore {
+    func addItemTag(tabId: String, itemId: String, tagName: String) {
+        let normalizedName = TagUtilities.normalizeTagName(tagName)
+        guard normalizedName.isEmpty == false, TagUtilities.tagKey(normalizedName) != "link" else {
+            return
+        }
+
+        commit { state in
+            let existingTag = TagUtilities.findTag(
+                named: normalizedName,
+                in: TagUtilities.collectActiveTags(from: state.tabs)
+            )
+            let tag = existingTag ?? TagUtilities.makeTag(name: normalizedName)
+
+            state.tabs = state.tabs.map { tab in
+                guard tab.id == tabId else {
+                    return tab
+                }
+
+                let items = tab.items.map { item in
+                    guard item.id == itemId,
+                          TagUtilities.findTag(named: tag.name, in: item.tags) == nil else {
+                        return item
+                    }
+
+                    return Item(
+                        id: item.id,
+                        richText: item.richText,
+                        state: item.state,
+                        tags: item.tags + [tag],
+                        createdAt: item.createdAt
+                    )
+                }
+
+                return Tab(id: tab.id, title: tab.title, items: items, createdAt: tab.createdAt)
+            }
+        }
+    }
+
+    func removeItemTag(tabId: String, itemId: String, tagName: String) {
+        let key = TagUtilities.tagKey(tagName)
+        guard key.isEmpty == false else {
+            return
+        }
+
+        commit { state in
+            state.tabs = state.tabs.map { tab in
+                guard tab.id == tabId else {
+                    return tab
+                }
+
+                let items = tab.items.map { item in
+                    guard item.id == itemId else {
+                        return item
+                    }
+
+                    return Item(
+                        id: item.id,
+                        richText: item.richText,
+                        state: item.state,
+                        tags: item.tags.filter { TagUtilities.tagKey($0.name) != key },
+                        createdAt: item.createdAt
+                    )
+                }
+
+                return Tab(id: tab.id, title: tab.title, items: items, createdAt: tab.createdAt)
+            }
+        }
+    }
+
     func createItem(position: VerticalDirection, itemLimit: Int) {
         guard let activeTab, activeTab.items.count < itemLimit else {
             return
