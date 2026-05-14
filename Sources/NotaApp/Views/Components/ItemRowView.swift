@@ -7,7 +7,9 @@ struct ItemRowView: View {
     @StateObject private var editorBridge = RichTextEditorView.Bridge()
     @State private var editorMode: ItemEditorMode = .insert
     @State private var slashState: RichTextEditorView.SlashState?
+    @State private var slashSelectionIndex = 0
     @State private var showLinkPopup = false
+    @State private var focusedTagIndex: Int?
 
     let item: Item
     let tabId: String
@@ -58,6 +60,10 @@ struct ItemRowView: View {
                         },
                         onSlashStateChange: { nextState in
                             slashState = nextState
+                            slashSelectionIndex = 0
+                        },
+                        onEditorEvent: { event, textView, mode in
+                            handleEditorEvent(event, textView: textView, mode: mode)
                         }
                     )
                     .frame(maxWidth: .infinity, minHeight: 16, alignment: .leading)
@@ -96,9 +102,16 @@ struct ItemRowView: View {
                             .foregroundStyle(Color(css: tag.color))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(focusedTagIndex == index(for: tag.id) ? Color(css: tag.color).opacity(0.16) : .clear)
+                            )
                             .overlay(
                                 Capsule()
-                                    .stroke(Color(css: tag.color), lineWidth: 1)
+                                    .stroke(
+                                        focusedTagIndex == index(for: tag.id) ? theme.textPrimary : Color(css: tag.color),
+                                        lineWidth: 1
+                                    )
                             )
                         }
                     }
@@ -139,18 +152,12 @@ struct ItemRowView: View {
                 )
 
                 if items.isEmpty == false {
-                    SlashMenuView(items: items, theme: theme) { selectedItem in
-                        editorBridge.replace(range: slashState.range, with: "")
-                        self.slashState = nil
-
-                        switch selectedItem {
-                        case .command:
-                            showLinkPopup = true
-                        case let .tag(_, tag, _, _):
-                            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: tag.name)
-                        case let .createTag(_, name, _, _):
-                            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: name)
-                        }
+                    SlashMenuView(
+                        items: items,
+                        selectedIndex: slashSelectionIndex,
+                        theme: theme
+                    ) { selectedItem in
+                        selectSlashItem(selectedItem, slashState: slashState)
                     }
                     .offset(x: 28, y: 40)
                 }
@@ -165,6 +172,7 @@ struct ItemRowView: View {
                     editorBridge.focus()
                 } onCancel: {
                     showLinkPopup = false
+                    editorMode = .normal
                     editorBridge.focus()
                 }
                 .offset(x: 28, y: 40)
@@ -183,6 +191,9 @@ struct ItemRowView: View {
         }
         .onChange(of: editable) { _, nextEditable in
             guard nextEditable else {
+                focusedTagIndex = nil
+                slashState = nil
+                showLinkPopup = false
                 return
             }
 
@@ -219,6 +230,115 @@ struct ItemRowView: View {
 
         model.notesStore.setCursorIndex(index)
         model.notesStore.setMode(editing ? .edit : .nav)
+    }
+
+    private func index(for tagId: String) -> Int? {
+        item.tags.firstIndex { $0.id == tagId }
+    }
+
+    private func handleEditorEvent(_ event: NSEvent, textView: NotaTextView, mode: ItemEditorMode) -> Bool {
+        if let slashState {
+            return handleSlashEvent(event, slashState: slashState)
+        }
+
+        if let focusedTagIndex {
+            return handleTagFocusEvent(event, focusedTagIndex: focusedTagIndex)
+        }
+
+        guard mode == .normal else {
+            return false
+        }
+
+        if event.keyCode == 124,
+           textView.selectedRange().location >= textView.string.count,
+           item.tags.isEmpty == false {
+            self.focusedTagIndex = 0
+            return true
+        }
+
+        return false
+    }
+
+    private func handleSlashEvent(_ event: NSEvent, slashState: RichTextEditorView.SlashState) -> Bool {
+        let items = SlashCommandUtilities.buildItems(
+            query: slashState.query,
+            availableTags: TagUtilities.collectActiveTags(from: model.notesStore.tabs),
+            itemTags: item.tags
+        )
+        guard items.isEmpty == false else {
+            return false
+        }
+
+        switch event.keyCode {
+        case 53:
+            editorBridge.replace(range: slashState.range, with: "")
+            self.slashState = nil
+            return true
+        case 36, 76:
+            let index = min(max(slashSelectionIndex, 0), items.count - 1)
+            selectSlashItem(items[index], slashState: slashState)
+            return true
+        case 125:
+            slashSelectionIndex = min(slashSelectionIndex + 1, items.count - 1)
+            return true
+        case 126:
+            slashSelectionIndex = max(slashSelectionIndex - 1, 0)
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func selectSlashItem(_ selectedItem: SlashMenuItem, slashState: RichTextEditorView.SlashState?) {
+        guard let slashState else {
+            return
+        }
+
+        editorBridge.replace(range: slashState.range, with: "")
+        self.slashState = nil
+
+        switch selectedItem {
+        case .command:
+            showLinkPopup = true
+        case let .tag(_, tag, _, _):
+            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: tag.name)
+        case let .createTag(_, name, _, _):
+            model.notesStore.addItemTag(tabId: tabId, itemId: item.id, tagName: name)
+        }
+    }
+
+    private func handleTagFocusEvent(_ event: NSEvent, focusedTagIndex: Int) -> Bool {
+        switch event.keyCode {
+        case 123:
+            if focusedTagIndex == 0 {
+                self.focusedTagIndex = nil
+            } else {
+                self.focusedTagIndex = focusedTagIndex - 1
+            }
+            return true
+        case 124:
+            self.focusedTagIndex = min(focusedTagIndex + 1, item.tags.count - 1)
+            return true
+        case 51, 117:
+            guard item.tags.indices.contains(focusedTagIndex) else {
+                return true
+            }
+
+            let tag = item.tags[focusedTagIndex]
+            model.notesStore.removeItemTag(tabId: tabId, itemId: item.id, tagName: tag.name)
+            let nextCount = item.tags.count - 1
+            if nextCount <= 0 {
+                self.focusedTagIndex = nil
+            } else {
+                self.focusedTagIndex = min(focusedTagIndex, nextCount - 1)
+            }
+            return true
+        case 53:
+            self.focusedTagIndex = nil
+            return true
+        default:
+            return false
+        }
     }
 }
 

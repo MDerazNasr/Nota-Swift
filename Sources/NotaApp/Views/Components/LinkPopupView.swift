@@ -13,6 +13,7 @@ struct LinkPopupView: View {
     @State private var label = ""
     @State private var url = ""
     @FocusState private var focusedField: Field?
+    @State private var monitor: Any?
 
     var body: some View {
         VStack(spacing: 6) {
@@ -50,6 +51,10 @@ struct LinkPopupView: View {
         )
         .onAppear {
             focusedField = .label
+            installMonitor()
+        }
+        .onDisappear {
+            removeMonitor()
         }
     }
 
@@ -59,5 +64,55 @@ struct LinkPopupView: View {
         }
 
         onSubmit(label, url)
+    }
+
+    private func installMonitor() {
+        removeMonitor()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            switch event.keyCode {
+            case 53:
+                onCancel()
+                return nil
+            case 48:
+                cycleField(backward: event.modifierFlags.contains(.shift))
+                return nil
+            case 36, 76:
+                submit()
+                return nil
+            default:
+                break
+            }
+
+            guard let characters = event.charactersIgnoringModifiers else {
+                return event
+            }
+
+            if characters == "n", focusedField == .label, label.isEmpty {
+                focusedField = .url
+                return nil
+            }
+
+            if characters == "N", focusedField == .url, url.isEmpty {
+                focusedField = .label
+                return nil
+            }
+
+            return event
+        }
+    }
+
+    private func cycleField(backward: Bool) {
+        if backward {
+            focusedField = .label
+        } else {
+            focusedField = .url
+        }
+    }
+
+    private func removeMonitor() {
+        if let monitor {
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 struct AppKeyMonitor: ViewModifier {
     @Environment(NotaApplicationModel.self) private var model
     @State private var monitor: Any?
+    @State private var navCommandBuffer = NavCommandBuffer()
 
     func body(content: Content) -> some View {
         content
@@ -56,22 +57,26 @@ struct AppKeyMonitor: ViewModifier {
         }
 
         if shortcut == shortcuts.newTab {
+            navCommandBuffer.clear()
             model.notesStore.createTab()
             return true
         }
 
         if shortcut == shortcuts.deleteTab {
+            navCommandBuffer.clear()
             model.notesStore.deleteTab(id: model.notesStore.activeTabId)
             return true
         }
 
         if shortcut == shortcuts.checkItem,
            let focused = focusedItem {
+            navCommandBuffer.clear()
             model.notesStore.checkItem(tabId: focused.tabId, itemId: focused.item.id)
             return true
         }
 
         if shortcut == shortcuts.openItemLink {
+            navCommandBuffer.clear()
             if let focused = focusedItem,
                let urlString = focused.item.richText.firstLinkURLString,
                let url = URL(string: urlString) {
@@ -81,67 +86,107 @@ struct AppKeyMonitor: ViewModifier {
         }
 
         if shortcut == shortcuts.sortByTag {
+            navCommandBuffer.clear()
             model.notesStore.sortActiveTabByTag()
             return true
         }
 
         if shortcut == shortcuts.deleteItem,
            let focused = focusedItem {
+            navCommandBuffer.clear()
             model.notesStore.deleteItem(tabId: focused.tabId, itemId: focused.item.id)
             return true
         }
 
         if shortcut == shortcuts.enterMoveMode {
+            navCommandBuffer.clear()
             model.notesStore.enterMoveMode()
             return true
         }
 
         if shortcut == shortcuts.editItem {
+            navCommandBuffer.clear()
             model.notesStore.setMode(.edit)
             return true
         }
 
         if shortcut == shortcuts.moveTabLeft {
+            navCommandBuffer.clear()
             model.notesStore.reorderTab(id: model.notesStore.activeTabId, direction: .left)
             return true
         }
 
         if shortcut == shortcuts.moveTabRight {
+            navCommandBuffer.clear()
             model.notesStore.reorderTab(id: model.notesStore.activeTabId, direction: .right)
             return true
         }
 
         if shortcut == shortcuts.undo {
+            navCommandBuffer.clear()
             model.notesStore.undoLastChange()
+            return true
+        }
+
+        if handleNumberedTabShortcut(event) {
+            navCommandBuffer.clear()
             return true
         }
 
         switch event.charactersIgnoringModifiers {
         case "j":
+            navCommandBuffer.clear()
             model.notesStore.moveCursor(.down)
             return true
         case "k":
+            navCommandBuffer.clear()
             if model.notesStore.cursorIndex <= 0 {
                 model.notesStore.setMode(.tabs)
             } else {
                 model.notesStore.moveCursor(.up)
             }
             return true
+        case "H":
+            navCommandBuffer.clear()
+            jumpCursor(to: .top)
+            return true
+        case "M":
+            navCommandBuffer.clear()
+            jumpCursor(to: .middle)
+            return true
+        case "L":
+            navCommandBuffer.clear()
+            jumpCursor(to: .bottom)
+            return true
         case "h":
+            navCommandBuffer.clear()
             switchTab(offset: -1)
             return true
         case "l":
+            navCommandBuffer.clear()
             switchTab(offset: 1)
             return true
+        case "d":
+            var buffer = navCommandBuffer
+            let shouldDelete = buffer.registerDelete(now: CFAbsoluteTimeGetCurrent())
+            navCommandBuffer = buffer
+            if let focused = focusedItem,
+               shouldDelete {
+                model.notesStore.deleteItem(tabId: focused.tabId, itemId: focused.item.id)
+            }
+            return true
         default:
+            navCommandBuffer.clear()
             break
         }
 
         switch event.characters {
         case "o":
+            navCommandBuffer.clear()
             model.notesStore.createItem(position: .down, itemLimit: model.settingsStore.settings.itemLimit)
             return true
         case "O":
+            navCommandBuffer.clear()
             model.notesStore.createItem(position: .up, itemLimit: model.settingsStore.settings.itemLimit)
             return true
         default:
@@ -159,17 +204,47 @@ struct AppKeyMonitor: ViewModifier {
     }
 
     private func handleSettings(_ event: NSEvent) -> Bool {
+        if model.settingsCaptureKey != nil {
+            return false
+        }
+
         if event.keyCode == 53 {
             model.closeSettings()
             return true
         }
 
         switch event.charactersIgnoringModifiers {
+        case "j":
+            model.moveSettingsFocus(offset: 1)
+            return true
+        case "k":
+            model.moveSettingsFocus(offset: -1)
+            return true
         case "h":
-            moveSettingsTab(offset: -1)
+            model.moveSettingsTab(offset: -1)
             return true
         case "l":
-            moveSettingsTab(offset: 1)
+            model.moveSettingsTab(offset: 1)
+            return true
+        default:
+            break
+        }
+
+        switch event.keyCode {
+        case 36, 49, 76:
+            model.activateFocusedSettingsRow()
+            return true
+        case 123:
+            model.adjustFocusedSettingsRow(offset: -1)
+            return true
+        case 124:
+            model.adjustFocusedSettingsRow(offset: 1)
+            return true
+        case 125:
+            model.moveFocusedThemeSwatch(offset: 5)
+            return true
+        case 126:
+            model.moveFocusedThemeSwatch(offset: -5)
             return true
         default:
             return false
@@ -278,13 +353,34 @@ struct AppKeyMonitor: ViewModifier {
         model.notesStore.setActiveTab(id: model.notesStore.tabs[nextIndex].id)
     }
 
-    private func moveSettingsTab(offset: Int) {
-        let tabs = NotaApplicationModel.SettingsTab.allCases
-        guard let currentIndex = tabs.firstIndex(of: model.settingsTab) else {
+    private func handleNumberedTabShortcut(_ event: NSEvent) -> Bool {
+        guard event.modifierFlags.contains(.command),
+              let characters = event.charactersIgnoringModifiers,
+              let tabNumber = Int(characters),
+              tabNumber >= 1,
+              tabNumber <= 9 else {
+            return false
+        }
+
+        let index = tabNumber - 1
+        guard model.notesStore.tabs.indices.contains(index) else {
+            return true
+        }
+
+        model.notesStore.setActiveTab(id: model.notesStore.tabs[index].id)
+        return true
+    }
+
+    private func jumpCursor(to position: VisibleCursorPosition) {
+        guard let activeTab = model.notesStore.activeTab,
+              let index = visibleCursorIndex(
+                orderedVisibleItemIds: model.visibleItemIds,
+                items: activeTab.items,
+                position: position
+              ) else {
             return
         }
 
-        let nextIndex = (currentIndex + offset + tabs.count) % tabs.count
-        model.settingsTab = tabs[nextIndex]
+        model.notesStore.setCursorIndex(index)
     }
 }

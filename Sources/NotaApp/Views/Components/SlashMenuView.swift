@@ -3,12 +3,13 @@ import SwiftUI
 
 struct SlashMenuView: View {
     let items: [SlashMenuItem]
+    let selectedIndex: Int
     let theme: AppTheme
     let onSelect: (SlashMenuItem) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                 Button {
                     onSelect(item)
                 } label: {
@@ -21,6 +22,8 @@ struct SlashMenuView: View {
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(index == selectedIndex ? theme.accentMuted : .clear)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.textPrimary)
