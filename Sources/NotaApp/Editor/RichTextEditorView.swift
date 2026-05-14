@@ -59,6 +59,7 @@ struct RichTextEditorView: NSViewRepresentable {
     let onExitEditor: () -> Void
     let onCheckItem: () -> Void
     let onSlashStateChange: (SlashState?) -> Void
+    let onEditorEvent: (NSEvent, NotaTextView, ItemEditorMode) -> Bool
 
     struct SlashState: Equatable {
         var query: String
@@ -92,6 +93,7 @@ struct RichTextEditorView: NSViewRepresentable {
             context.coordinator.parent.mode = nextMode
         }
         textView.onExitEditor = onExitEditor
+        textView.onEditorEvent = onEditorEvent
         textView.onCursorRectChange = { nextRect in
             context.coordinator.parent.bridge.cursorRect = nextRect
         }
@@ -192,6 +194,7 @@ final class NotaTextView: NSTextView {
     var onCheckItem: (() -> Void)?
     var onModeChange: ((ItemEditorMode) -> Void)?
     var onExitEditor: (() -> Void)?
+    var onEditorEvent: ((NSEvent, NotaTextView, ItemEditorMode) -> Bool)?
     var onCursorRectChange: ((CGRect?) -> Void)?
     var vimState = ItemEditorVimState()
 
@@ -206,6 +209,11 @@ final class NotaTextView: NSTextView {
            let characters = event.charactersIgnoringModifiers?.lowercased(),
            ["b", "i", "u"].contains(characters) {
             toggleFormattingShortcut(characters)
+            return
+        }
+
+        if onEditorEvent?(event, self, editorMode) == true {
+            updateCursorRect()
             return
         }
 

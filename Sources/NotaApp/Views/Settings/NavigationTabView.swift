@@ -1,42 +1,31 @@
+import AppKit
 import NotaCore
 import SwiftUI
 
 struct NavigationTabView: View {
     @Environment(NotaApplicationModel.self) private var model
-    @State private var captureKey: ShortcutCaptureKey?
 
     let theme: AppTheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            section("Behavior") {
-                toggleRow("Open on startup", isOn: Binding(
-                    get: { model.settingsStore.settings.openOnStartup },
-                    set: { model.setOpenOnStartup($0) }
-                ))
-                toggleRow("Show in dock", isOn: Binding(
-                    get: { model.settingsStore.settings.showInDock },
-                    set: { model.setShowInDock($0) }
-                ))
-                toggleRow("Show in menu bar", isOn: Binding(
-                    get: { model.settingsStore.settings.showInMenuBar },
-                    set: { model.setShowInMenuBar($0) }
-                ))
-            }
+            ForEach(navigationSettingsSections) { section in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(section.title)
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundStyle(theme.textMuted)
+                        .padding(.top, 8)
 
-            ForEach(shortcutSections) { section in
-                self.section(section.title) {
                     ForEach(section.rows) { row in
-                        ShortcutCaptureRow(
-                            title: row.title,
-                            value: row.value(model.settingsStore.settings.shortcuts),
-                            captureKey: row.id,
-                            activeCapture: $captureKey,
-                            theme: theme
-                        ) { next in
-                            model.updateShortcut { shortcuts in
-                                row.set(&shortcuts, next)
-                            }
+                        switch row.kind {
+                        case let .toggle(key):
+                            toggleRow(row: row, key: key)
+                        case let .hotkey(key):
+                            ShortcutCaptureRow(row: row, captureKey: key, theme: theme)
+                        case .reference:
+                            referenceRow(row: row)
+                        case .theme, .font, .fontSize, .borderRadius, .itemLimit:
+                            EmptyView()
                         }
                     }
                 }
@@ -44,121 +33,177 @@ struct NavigationTabView: View {
         }
     }
 
-    private func section<Content: View>(
-        _ title: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundStyle(theme.textMuted)
-                .padding(.top, 8)
-
-            content()
-        }
-    }
-
-    private func toggleRow(_ label: String, isOn: Binding<Bool>) -> some View {
+    private func toggleRow(row: SettingsRowDescriptor, key: SettingsBehaviorKey) -> some View {
         HStack(spacing: 8) {
-            Text(label)
+            Text(row.title)
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(theme.textPrimary)
 
             Spacer()
 
-            Toggle("", isOn: isOn)
+            Toggle("", isOn: binding(for: key))
                 .labelsHidden()
                 .toggleStyle(.switch)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(minHeight: 40)
+        .background(model.settingsFocusIndex == row.index ? theme.accentMuted : .clear)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(theme.border)
                 .frame(height: 1)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.setSettingsFocusIndex(row.index)
+        }
+        .id(row.index)
     }
-}
 
-@MainActor
-private struct ShortcutSectionViewModel: Identifiable {
-    let id: String
-    let title: String
-    let rows: [ShortcutRowViewModel]
-}
-
-@MainActor
-private struct ShortcutRowViewModel: Identifiable {
-    let id: ShortcutCaptureKey
-    let title: String
-    let value: (ShortcutMap) -> String
-    let set: (inout ShortcutMap, String) -> Void
-}
-
-private struct ShortcutCaptureRow: View {
-    let title: String
-    let value: String
-    let captureKey: ShortcutCaptureKey
-    @Binding var activeCapture: ShortcutCaptureKey?
-    let theme: AppTheme
-    let onSave: (String) -> Void
-
-    @State private var monitor: Any?
-
-    var body: some View {
+    private func referenceRow(row: SettingsRowDescriptor) -> some View {
         HStack(spacing: 8) {
-            Text(title)
+            Text(row.title)
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(theme.textPrimary)
 
             Spacer()
 
-            Button(activeCapture == captureKey ? "Press keys" : ShortcutFormatter.display(value)) {
-                activeCapture = captureKey
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: .regular, design: .monospaced))
-            .foregroundStyle(activeCapture == captureKey ? theme.textPrimary : theme.textSecondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(activeCapture == captureKey ? theme.surfaceHover : theme.background)
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(activeCapture == captureKey ? theme.accent : theme.border, lineWidth: 1)
-            )
+            Text(row.value ?? "")
+                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .foregroundStyle(theme.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(theme.background)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(theme.border, lineWidth: 1)
+                )
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(minHeight: 40)
+        .background(model.settingsFocusIndex == row.index ? theme.accentMuted : .clear)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(theme.border)
                 .frame(height: 1)
         }
-        .onChange(of: activeCapture == captureKey) { _, isActive in
-            isActive ? installMonitor() : removeMonitor()
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.setSettingsFocusIndex(row.index)
+        }
+        .id(row.index)
+    }
+
+    private func binding(for key: SettingsBehaviorKey) -> Binding<Bool> {
+        Binding(
+            get: {
+                switch key {
+                case .openOnStartup:
+                    model.settingsStore.settings.openOnStartup
+                case .showInDock:
+                    model.settingsStore.settings.showInDock
+                case .showInMenuBar:
+                    model.settingsStore.settings.showInMenuBar
+                }
+            },
+            set: { enabled in
+                switch key {
+                case .openOnStartup:
+                    model.setOpenOnStartup(enabled)
+                case .showInDock:
+                    model.setShowInDock(enabled)
+                case .showInMenuBar:
+                    model.setShowInMenuBar(enabled)
+                }
+            }
+        )
+    }
+}
+
+private struct ShortcutCaptureRow: View {
+    @Environment(NotaApplicationModel.self) private var model
+
+    let row: SettingsRowDescriptor
+    let captureKey: SettingsShortcutCaptureKey
+    let theme: AppTheme
+
+    @State private var monitor: Any?
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(row.title)
+                .font(.system(size: 12, weight: .regular, design: .monospaced))
+                .foregroundStyle(theme.textPrimary)
+
+            Spacer()
+
+            Button(isCapturing ? "Press keys" : ShortcutFormatter.display(currentValue)) {
+                model.settingsCaptureKey = captureKey
+                model.setSettingsFocusIndex(row.index)
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: .regular, design: .monospaced))
+            .foregroundStyle(isCapturing ? theme.textPrimary : theme.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(isCapturing ? theme.surfaceHover : theme.background)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isCapturing ? theme.accent : theme.border, lineWidth: 1)
+            )
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .frame(minHeight: 40)
+        .background(model.settingsFocusIndex == row.index ? theme.accentMuted : .clear)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(theme.border)
+                .frame(height: 1)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.setSettingsFocusIndex(row.index)
+        }
+        .id(row.index)
+        .onAppear {
+            if isCapturing {
+                installMonitor()
+            }
+        }
+        .onChange(of: isCapturing) { _, active in
+            active ? installMonitor() : removeMonitor()
         }
         .onDisappear {
             removeMonitor()
         }
     }
 
+    private var isCapturing: Bool {
+        model.settingsCaptureKey == captureKey
+    }
+
+    private var currentValue: String {
+        captureKey.value(from: model.settingsStore.settings.shortcuts)
+    }
+
     private func installMonitor() {
         removeMonitor()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard activeCapture == captureKey else {
+            guard isCapturing else {
                 return event
             }
 
             if event.keyCode == 53 {
-                activeCapture = nil
+                model.settingsCaptureKey = nil
                 return nil
             }
 
             if event.keyCode == 51 || event.keyCode == 117 {
-                onSave("")
-                activeCapture = nil
+                saveShortcut("")
                 return nil
             }
 
@@ -167,10 +212,16 @@ private struct ShortcutCaptureRow: View {
                 return nil
             }
 
-            onSave(next)
-            activeCapture = nil
+            saveShortcut(next)
             return nil
         }
+    }
+
+    private func saveShortcut(_ value: String) {
+        model.updateShortcut { shortcuts in
+            captureKey.assign(value, to: &shortcuts)
+        }
+        model.settingsCaptureKey = nil
     }
 
     private func removeMonitor() {
@@ -180,64 +231,3 @@ private struct ShortcutCaptureRow: View {
         }
     }
 }
-
-private enum ShortcutCaptureKey: String, Hashable {
-    case toggleWindow
-    case openSettings
-    case newTab
-    case deleteTab
-    case moveTabLeft
-    case moveTabRight
-    case createItemBelow
-    case createItemAbove
-    case editItem
-    case deleteItem
-    case checkItem
-    case openItemLink
-    case sortByTag
-    case enterMoveMode
-    case undo
-}
-
-@MainActor
-private let shortcutSections: [ShortcutSectionViewModel] = [
-    .init(
-        id: "window",
-        title: "Window",
-        rows: [
-            .init(id: .toggleWindow, title: "Toggle window", value: { $0.toggleWindow }, set: { $0.toggleWindow = $1 }),
-            .init(id: .openSettings, title: "Open settings", value: { $0.openSettings }, set: { $0.openSettings = $1 }),
-        ]
-    ),
-    .init(
-        id: "tabs",
-        title: "Tabs",
-        rows: [
-            .init(id: .newTab, title: "New tab", value: { $0.newTab }, set: { $0.newTab = $1 }),
-            .init(id: .deleteTab, title: "Delete list", value: { $0.deleteTab }, set: { $0.deleteTab = $1 }),
-            .init(id: .moveTabLeft, title: "Move tab left", value: { $0.moveTabLeft }, set: { $0.moveTabLeft = $1 }),
-            .init(id: .moveTabRight, title: "Move tab right", value: { $0.moveTabRight }, set: { $0.moveTabRight = $1 }),
-        ]
-    ),
-    .init(
-        id: "items",
-        title: "Item editing",
-        rows: [
-            .init(id: .createItemBelow, title: "New item below", value: { $0.createItemBelow }, set: { $0.createItemBelow = $1 }),
-            .init(id: .createItemAbove, title: "New item above", value: { $0.createItemAbove }, set: { $0.createItemAbove = $1 }),
-            .init(id: .editItem, title: "Edit focused item", value: { $0.editItem }, set: { $0.editItem = $1 }),
-            .init(id: .deleteItem, title: "Delete focused item", value: { $0.deleteItem }, set: { $0.deleteItem = $1 }),
-            .init(id: .checkItem, title: "Check item", value: { $0.checkItem }, set: { $0.checkItem = $1 }),
-            .init(id: .openItemLink, title: "Open item link", value: { $0.openItemLink }, set: { $0.openItemLink = $1 }),
-            .init(id: .sortByTag, title: "Toggle tag sort", value: { $0.sortByTag }, set: { $0.sortByTag = $1 }),
-        ]
-    ),
-    .init(
-        id: "movement",
-        title: "Move mode",
-        rows: [
-            .init(id: .enterMoveMode, title: "Enter move mode", value: { $0.enterMoveMode }, set: { $0.enterMoveMode = $1 }),
-            .init(id: .undo, title: "Undo", value: { $0.undo }, set: { $0.undo = $1 }),
-        ]
-    ),
-]

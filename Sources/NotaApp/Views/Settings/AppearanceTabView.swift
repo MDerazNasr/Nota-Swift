@@ -10,7 +10,7 @@ struct AppearanceTabView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            settingsRow(label: "Theme") {
+            settingsRow(row: appearanceSettingsRows[0]) {
                 LazyVGrid(columns: swatchColumns, alignment: .leading, spacing: 8) {
                     ForEach(ThemeCatalog.orderedThemes, id: \.key) { swatchTheme in
                         Button {
@@ -36,7 +36,7 @@ struct AppearanceTabView: View {
                 }
             }
 
-            settingsRow(label: "Font") {
+            settingsRow(row: appearanceSettingsRows[1]) {
                 Picker("", selection: Binding(
                     get: { model.settingsStore.settings.font },
                     set: { model.settingsStore.setFont($0) }
@@ -50,7 +50,7 @@ struct AppearanceTabView: View {
             }
 
             sliderRow(
-                label: "Font Size",
+                row: appearanceSettingsRows[2],
                 value: model.settingsStore.settings.fontSize,
                 range: 10...20
             ) {
@@ -58,7 +58,7 @@ struct AppearanceTabView: View {
             }
 
             sliderRow(
-                label: "Radius",
+                row: appearanceSettingsRows[3],
                 value: model.settingsStore.settings.borderRadius,
                 range: 0...12
             ) {
@@ -66,7 +66,7 @@ struct AppearanceTabView: View {
             }
 
             sliderRow(
-                label: "Item Limit",
+                row: appearanceSettingsRows[4],
                 value: model.settingsStore.settings.itemLimit,
                 range: 5...50
             ) {
@@ -76,11 +76,11 @@ struct AppearanceTabView: View {
     }
 
     private func settingsRow<Content: View>(
-        label: String,
+        row: SettingsRowDescriptor,
         @ViewBuilder content: () -> Content
     ) -> some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(label)
+            Text(row.title)
                 .font(.system(size: 12, weight: .regular, design: .monospaced))
                 .foregroundStyle(theme.textPrimary)
                 .frame(width: 88, alignment: .leading)
@@ -92,20 +92,26 @@ struct AppearanceTabView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(minHeight: 40)
+        .background(model.settingsFocusIndex == row.index ? theme.accentMuted : .clear)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(theme.border)
                 .frame(height: 1)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            model.setSettingsFocusIndex(row.index)
+        }
+        .id(row.index)
     }
 
     private func sliderRow(
-        label: String,
+        row: SettingsRowDescriptor,
         value: Int,
         range: ClosedRange<Int>,
         onChange: @escaping (Int) -> Void
     ) -> some View {
-        settingsRow(label: label) {
+        settingsRow(row: row) {
             HStack(spacing: 8) {
                 Slider(
                     value: Binding(

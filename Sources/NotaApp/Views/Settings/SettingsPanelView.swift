@@ -41,21 +41,39 @@ struct SettingsPanelView: View {
             .padding(.top, 12)
             .padding(.bottom, 8)
 
-            ScrollView(.vertical, showsIndicators: true) {
-                Group {
-                    switch model.settingsTab {
-                    case .appearance:
-                        AppearanceTabView(theme: theme)
-                    case .navigation:
-                        NavigationTabView(theme: theme)
-                    case .about:
-                        AboutTabView(theme: theme)
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: true) {
+                    Group {
+                        switch model.settingsTab {
+                        case .appearance:
+                            AppearanceTabView(theme: theme)
+                        case .navigation:
+                            NavigationTabView(theme: theme)
+                        case .about:
+                            AboutTabView(theme: theme)
+                        }
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 18)
                 }
-                .padding(.horizontal, 18)
-                .padding(.bottom, 18)
+                .scrollContentBackground(.hidden)
+                .onAppear {
+                    scrollFocusedRow(with: proxy)
+                }
+                .onChange(of: model.settingsOpen) { _, open in
+                    guard open else {
+                        return
+                    }
+
+                    scrollFocusedRow(with: proxy)
+                }
+                .onChange(of: model.settingsTab) { _, _ in
+                    scrollFocusedRow(with: proxy)
+                }
+                .onChange(of: model.settingsFocusIndex) { _, _ in
+                    scrollFocusedRow(with: proxy)
+                }
             }
-            .scrollContentBackground(.hidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.surface)
@@ -63,6 +81,16 @@ struct SettingsPanelView: View {
         .opacity(model.settingsOpen ? 1 : 0.001)
         .allowsHitTesting(model.settingsOpen)
         .animation(.easeInOut(duration: 0.2), value: model.settingsOpen)
+    }
+
+    private func scrollFocusedRow(with proxy: ScrollViewProxy) {
+        guard model.settingsTab != .about else {
+            return
+        }
+
+        DispatchQueue.main.async {
+            proxy.scrollTo(model.settingsFocusIndex, anchor: .center)
+        }
     }
 }
 
@@ -75,7 +103,7 @@ private struct SettingsTabButton: View {
 
     var body: some View {
         Button {
-            model.settingsTab = tab
+            model.selectSettingsTab(tab)
         } label: {
             Text(title)
                 .font(.system(size: 12, weight: .medium, design: .monospaced))
